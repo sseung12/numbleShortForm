@@ -8,7 +8,7 @@ import com.numble.shortForm.user.dto.response.UserResponseDto;
 import com.numble.shortForm.user.entity.Authority;
 import com.numble.shortForm.user.entity.Users;
 import com.numble.shortForm.user.jwt.JwtTokenProvider;
-import com.numble.shortForm.user.repository.UserRepository;
+import com.numble.shortForm.user.repository.UsersRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisTemplate;
@@ -31,8 +31,7 @@ import java.util.concurrent.TimeUnit;
 @Slf4j
 public class UserService {
 
-    private final UserRepository userRepository;
-    private final Response response;
+    private final UsersRepository usersRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtTokenProvider;
     private final AuthenticationManagerBuilder authenticationManagerBuilder;
@@ -40,8 +39,8 @@ public class UserService {
 
     @Transactional
     public ResponseEntity<?> signUp(UserRequestDto.SignUp signUpDto) {
-        log.info("password {}",signUpDto.getPassword());
-        userRepository.findByEmail(signUpDto.getEmail()).ifPresent( user ->{
+
+        usersRepository.findByEmail(signUpDto.getEmail()).ifPresent(user ->{
             throw new CustomException(ErrorCode.EXIST_EMAIL_ERROR);
         });
 
@@ -52,15 +51,14 @@ public class UserService {
                 .roles(Collections.singletonList(Authority.ROLE_USER.name()))
                 .build();
 
-        userRepository.save(user);
-
-        return response.success("회원가입에 성공했습니다.");
+        usersRepository.save(user);
+        return Response.success("회원가입에 성공했습니다.");
     }
 
 
-    public ResponseEntity<?> login(UserRequestDto.Login loginDto) {
-        userRepository.findByEmail(loginDto.getEmail()).orElseThrow(() ->
-            new CustomException(ErrorCode.NOT_FOUND_USER));
+    public UserResponseDto.TokenInfo login(UserRequestDto.Login loginDto) {
+        Users users = usersRepository.findByEmail(loginDto.getEmail()).orElseThrow(() ->
+                new CustomException(ErrorCode.NOT_FOUND_USER));
 
         // email,password를 사용해 authenticationToken 생성
         UsernamePasswordAuthenticationToken authenticationToken = loginDto.toAuthentication();
@@ -75,7 +73,7 @@ public class UserService {
         redisTemplate.opsForValue()
                 .set("RT:" +authentication.getName(),tokenInfo.getRefreshToken(),tokenInfo.getRefreshTokenExpirationTime(), TimeUnit.MILLISECONDS);;
 
-        return response.success(tokenInfo,"로그인 성공", HttpStatus.OK);
+      return tokenInfo;
     }
 
     public ResponseEntity<?> reissue(UserRequestDto.Reissue reissueDto) {
@@ -84,7 +82,8 @@ public class UserService {
             throw new CustomException(ErrorCode.BAD_REQUEST_PARAM,"Refresh Token 정보가 유효하지 않습니다.");
         }
         Authentication authentication = jwtTokenProvider.getAuthentication(reissueDto.getAccessToken());
-
+        log.info("authentication getPrincipal {}",authentication.getPrincipal());
+        log.info("authentication getname {}",authentication.getName());
         String refreshToken =(String) redisTemplate.opsForValue().get("RT:"+authentication.getName());
 
         if (ObjectUtils.isEmpty(refreshToken)) {
@@ -98,7 +97,7 @@ public class UserService {
 
         redisTemplate.opsForValue()
                 .set("RT:" + authentication.getName(), tokenInfo.getRefreshToken(), tokenInfo.getRefreshTokenExpirationTime(), TimeUnit.MILLISECONDS);
-        return response.success(tokenInfo, "Token 정보가 갱신되었습니다.", HttpStatus.OK);
+        return Response.success(tokenInfo, "Token 정보가 갱신되었습니다.", HttpStatus.OK);
     }
 
     public ResponseEntity<?> logout(UserRequestDto.Logout logoutDto) {
@@ -117,7 +116,11 @@ public class UserService {
         redisTemplate.opsForValue()
                 .set(logoutDto.getAccessToken(),"logout",expiration,TimeUnit.MILLISECONDS);
 
-        return response.success("로그아웃 되었습니다.");
+        return Response.success("로그아웃 되었습니다.");
     }
 
+    public ResponseEntity<?> change(UserRequestDto.Change changeDto) {
+        return Response.success("회원정보 수정 되었습니다.");
+
+    }
 }
